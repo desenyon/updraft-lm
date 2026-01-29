@@ -20,7 +20,7 @@ wheels/
 *.egg
 checkpoints/
 wandb/
-data/
+data/samples/
 *.pt
 *.pth
 .vscode/
