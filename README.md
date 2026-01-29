@@ -1,12 +1,27 @@
-# Updraft-LM
+<div align="center">
+
+```
+██╗   ██╗██████╗ ██████╗ ██████╗  █████╗ ███████╗████████╗    ██╗     ███╗   ███╗
+██║   ██║██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝╚══██╔══╝    ██║     ████╗ ████║
+██║   ██║██████╔╝██║  ██║██████╔╝███████║█████╗     ██║       ██║     ██╔████╔██║
+██║   ██║██╔═══╝ ██║  ██║██╔══██╗██╔══██║██╔══╝     ██║       ██║     ██║╚██╔╝██║
+╚██████╔╝██║     ██████╔╝██║  ██║██║  ██║██║        ██║       ███████╗██║ ╚═╝ ██║
+ ╚═════╝ ╚═╝     ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝        ╚═╝       ╚══════╝╚═╝     ╚═╝
+```
+
+### A GPT-1 Level Transformer
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](test_model.py)
 
-A GPT-1 level transformer language model built from scratch. 117M parameters, complete with mathematical implementations and pretrained weight support.
+**117M parameters · Built from scratch · Mathematical rigor**
 
-Every component—from scaled dot-product attention to positional encoding—is implemented from first principles with no high-level abstractions.
+</div>
+
+---
+
+---
 
 ## Installation
 
@@ -16,7 +31,11 @@ cd updraft-lm
 pip install -r requirements.txt
 ```
 
-## Quick Start
+<div align="center">
+
+### Quick Start
+
+</div>
 
 Run the demo with pretrained GPT-2 weights:
 
@@ -24,7 +43,13 @@ Run the demo with pretrained GPT-2 weights:
 ./quickstart.sh
 ```
 
+<br>
+
+<div align="center">
+
 ## Usage
+
+</div>
 
 ### Generate Text
 
@@ -70,51 +95,131 @@ python main.py interactive \
     --temperature 0.8
 ```
 
+---
+
+<div align="center">
+
 ## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      INPUT TOKEN IDS                         │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+              ┌────────────────┐
+              │ Token Embedding │
+              └────────┬───────┘
+                       │
+                       ▼
+              ┌────────────────────┐
+              │ Positional Encoding │
+              └────────┬───────────┘
+                       │
+        ╔══════════════╧═══════════════╗
+        ║   Transformer Block × 12     ║
+        ║  ┌─────────────────────────┐ ║
+        ║  │  Multi-Head Attention   │ ║
+        ║  │    (12 heads × 64 dim)  │ ║
+        ║  └──────────┬──────────────┘ ║
+        ║             │                 ║
+        ║             ▼                 ║
+        ║  ┌─────────────────────────┐ ║
+        ║  │   Feed-Forward Network  │ ║
+        ║  │      (768 → 3072)       │ ║
+        ║  └─────────────────────────┘ ║
+        ╚══════════════╤═══════════════╝
+                       │
+                       ▼
+              ┌────────────────┐
+              │  Layer Norm     │
+              └────────┬───────┘
+                       │
+                       ▼
+              ┌────────────────┐
+              │   LM Head       │
+              └────────┬───────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │         LOGITS               │
+        │    (vocabulary: 50,257)      │
+        └──────────────────────────────┘
+```
+
+</div>
 
 ### Model Specifications
 
-| Component | Value | Details |
-|-----------|-------|---------|
-| Layers | 12 | Transformer decoder blocks |
-| Attention Heads | 12 | 64 dimensions each |
-| Embedding Dimension | 768 | d_model |
-| Feed-Forward Dimension | 3072 | 4x embedding dimension |
-| Max Sequence Length | 512 | Maximum context window |
-| Vocabulary Size | 50,257 | GPT-2 tokenizer |
-| Total Parameters | ~117M | Comparable to GPT-1 |
+| Component              | Value  | Details                    |
+| ---------------------- | ------ | -------------------------- |
+| Layers                 | 12     | Transformer decoder blocks |
+| Attention Heads        | 12     | 64 dimensions each         |
+| Embedding Dimension    | 768    | d_model                    |
+| Feed-Forward Dimension | 3072   | 4x embedding dimension     |
+| Max Sequence Length    | 512    | Maximum context window     |
+| Vocabulary Size        | 50,257 | GPT-2 tokenizer            |
+| Total Parameters       | ~117M  | Comparable to GPT-1        |
 
 ### Mathematical Implementation
 
+<table>
+<tr>
+<td width="50%">
+
 **Scaled Dot-Product Attention**
+
 ```
 Attention(Q, K, V) = softmax(QK^T / √d_k)V
 ```
 
+</td>
+<td width="50%">
+
 **Multi-Head Attention**
+
 ```
 MultiHead(Q, K, V) = Concat(head₁, ..., head₁₂)W^O
 where head_i = Attention(QW^Q_i, KW^K_i, VW^V_i)
 ```
 
+</td>
+</tr>
+<tr>
+<td colspan="2">
+
 **Positional Encoding**
+
 ```
 PE(pos, 2i)   = sin(pos / 10000^(2i/d_model))
 PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))
 ```
 
+</td>
+</tr>
+</table>
+
 Complete mathematical derivations available in [MATH.md](MATH.md).
+
+---
+
+<div align="center">
 
 ## Project Structure
 
+</div>
+
 ```
 updraft-lm/
+│
 ├── model/
 │   ├── transformer.py      # Attention, feed-forward, transformer blocks
 │   └── gpt1.py            # Complete GPT-1 model
+│
 ├── data/
 │   ├── tokenizer.py       # TikToken wrapper
 │   └── dataset.py         # Data loading and preprocessing
+│
 ├── config.py              # Model configuration
 ├── trainer.py             # Training loop and optimization
 ├── generator.py           # Text generation
@@ -125,46 +230,125 @@ updraft-lm/
 └── MATH.md                # Mathematical documentation
 ```
 
+---
+
+<div align="center">
+
 ## Testing
+
+</div>
 
 ```bash
 python test_model.py
 ```
 
 All core functionality tested:
-- Model creation and initialization
-- Tokenizer encoding/decoding
-- Attention mechanism
-- Forward pass
-- Text generation
+
+<div align="center">
+
+| Test | Status |
+|------|--------|
+| Model creation and initialization | ✓ |
+| Tokenizer encoding/decoding | ✓ |
+| Attention mechanism | ✓ |
+| Forward pass | ✓ |
+| Text generation | ✓ |
+
+**All tests passing**
+
+</div>
+
+---
+
+<div align="center">
 
 ## Features
 
-- Complete transformer implementation from scratch
-- Multi-head self-attention with scaled dot-product
+</div>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Core Architecture**
+- Multi-head self-attention
 - Sinusoidal positional encoding
-- Layer normalization with residual connections
-- AdamW optimizer with weight decay
-- Learning rate warmup and cosine annealing
+- Layer normalization
+- Residual connections
+- GELU activations
+
+**Training**
+- AdamW optimizer
+- Weight decay
+- Learning rate warmup
+- Cosine annealing
 - Gradient clipping
-- Multiple sampling strategies (greedy, top-k, top-p, beam search)
-- Temperature-controlled generation
+
+</td>
+<td width="50%" valign="top">
+
+**Generation**
+- Greedy sampling
+- Top-k sampling
+- Top-p (nucleus) sampling
+- Beam search
+- Temperature control
+
+**Utilities**
 - Pretrained GPT-2 weight loading
-- Checkpoint saving and loading
+- Checkpoint management
 - HuggingFace dataset support
+- TikToken tokenizer
+
+</td>
+</tr>
+</table>
+
+---
+
+<div align="center">
 
 ## Performance
 
+</div>
+
+<table>
+<tr>
+<td width="50%">
+
 **Computational Complexity**
-- Self-Attention: O(n² · d)
-- Feed-Forward: O(n · d · d_ff)
-- Full Model: O(L · (n² · d + n · d · d_ff))
-- Total: ~143 billion FLOPs per forward pass
+
+```
+Self-Attention:  O(n² · d)
+Feed-Forward:    O(n · d · d_ff)
+Full Model:      O(L · (n² · d + n · d · d_ff))
+```
+
+**Total:** ~143 billion FLOPs per forward pass
+
+</td>
+<td width="50%">
 
 **Memory Requirements**
-- Model Parameters: ~468 MB (FP32)
-- Training (batch 64×512): ~1.5 GB
 
-## License
+```
+Model Parameters:         ~468 MB (FP32)
+Optimizer States:         ~936 MB
+Training Batch (64×512):  ~96 MB
+```
 
-MIT
+**Total Training:** ~1.5 GB
+
+</td>
+</tr>
+</table>
+
+---
+
+<div align="center">
+
+**MIT License**
+
+Built with mathematical precision from first principles
+
+</div>
