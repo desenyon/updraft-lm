@@ -88,7 +88,7 @@ class Generator:
 
 def load_model_for_inference(checkpoint_path, config=None):
     if config is None:
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         if 'config' in checkpoint:
             config = checkpoint['config']
         else:
@@ -96,7 +96,7 @@ def load_model_for_inference(checkpoint_path, config=None):
     
     model = GPT1Model(config)
     
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     tokenizer = Tokenizer()

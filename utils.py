@@ -94,6 +94,6 @@ def save_model(model, path):
 
 
 def load_model(model, path, device='cpu'):
-    model.load_state_dict(torch.load(path, map_location=device))
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=False))
     print(f"Model loaded from {path}")
     return model

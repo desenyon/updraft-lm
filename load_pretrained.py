@@ -63,7 +63,8 @@ def convert_gpt2_to_gpt1(gpt2_model_name='gpt2'):
         attn_bias = gpt2_state[f'transformer.h.{i}.attn.c_attn.bias']
         
         d_model = config.d_model
-        q_weight, k_weight, v_weight = attn_weight.split(d_model, dim=1)
+        
+        q_weight, k_weight, v_weight = attn_weight.split(d_model, dim=0)
         q_bias, k_bias, v_bias = attn_bias.split(d_model, dim=0)
         
         transferred[f'blocks.{i}.attention.q_linear.weight'] = q_weight
