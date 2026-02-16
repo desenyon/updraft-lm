@@ -178,6 +178,21 @@ def demo():
     print("\nDemo complete!")
 
 
+def tui():
+    """Launch the TUI (Text User Interface)"""
+    try:
+        from tui.app import UpdraftTUI
+        app = UpdraftTUI()
+        app.run()
+    except ImportError as e:
+        print(f"Error: TUI dependencies not installed. Please run: pip install textual rich")
+        print(f"Details: {e}")
+        return
+    except Exception as e:
+        print(f"Error launching TUI: {e}")
+        return
+
+
 def main():
     parser = argparse.ArgumentParser(description='Updraft-LM: GPT-1 Level Language Model')
     subparsers = parser.add_subparsers(dest='mode', help='Mode to run')
@@ -209,6 +224,8 @@ def main():
     interactive_parser.add_argument('--top-k', type=int, default=50, help='Top-k sampling')
     interactive_parser.add_argument('--top-p', type=float, default=None, help='Top-p (nucleus) sampling')
     
+    tui_parser = subparsers.add_parser('tui', help='Launch powerful Text User Interface')
+    
     demo_parser = subparsers.add_parser('demo', help='Run demo with untrained model')
     
     args = parser.parse_args()
@@ -219,6 +236,8 @@ def main():
         generate(args)
     elif args.mode == 'interactive':
         interactive(args)
+    elif args.mode == 'tui':
+        tui()
     elif args.mode == 'demo':
         demo()
     else:
