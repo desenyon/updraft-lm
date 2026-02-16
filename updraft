@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""
+Updraft-LM CLI Tool
+Convenient command-line interface for common operations
+"""
+
+import sys
+import argparse
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Updraft-LM: GPT-1 Level Language Model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Launch the TUI
+  updraft tui
+  
+  # Quick generation
+  updraft gen "Once upon a time" --checkpoint model.pt
+  
+  # Train a model
+  updraft train --dataset wikitext --epochs 5
+  
+  # Export a model
+  updraft export model.pt --format onnx --output model.onnx
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+    
+    # TUI command
+    tui_parser = subparsers.add_parser('tui', help='Launch Text User Interface')
+    
+    # Quick generation command
+    gen_parser = subparsers.add_parser('gen', help='Quick text generation')
+    gen_parser.add_argument('prompt', type=str, help='Text prompt')
+    gen_parser.add_argument('--checkpoint', '-c', type=str, help='Model checkpoint')
+    gen_parser.add_argument('--max-length', '-l', type=int, default=100)
+    gen_parser.add_argument('--temperature', '-t', type=float, default=0.8)
+    gen_parser.add_argument('--top-k', '-k', type=int, default=50)
+    
+    # Train command
+    train_parser = subparsers.add_parser('train', help='Train model')
+    train_parser.add_argument('--dataset', type=str, default='wikitext')
+    train_parser.add_argument('--epochs', type=int, default=5)
+    train_parser.add_argument('--batch-size', type=int, default=64)
+    train_parser.add_argument('--learning-rate', type=float, default=2.5e-4)
+    
+    # Export command
+    export_parser = subparsers.add_parser('export', help='Export model')
+    export_parser.add_argument('checkpoint', type=str, help='Model checkpoint')
+    export_parser.add_argument('--format', choices=['onnx', 'torchscript', 'quantized'], default='onnx')
+    export_parser.add_argument('--output', '-o', type=str, help='Output path')
+    
+    # Info command
+    info_parser = subparsers.add_parser('info', help='Show model information')
+    info_parser.add_argument('checkpoint', type=str, help='Model checkpoint')
+    
+    args = parser.parse_args()
+    
+    if args.command == 'tui':
+        from tui.app import UpdraftTUI
+        app = UpdraftTUI()
+        app.run()
+    
+    elif args.command == 'gen':
+        from generator import load_model_for_inference
+        
+        checkpoint = args.checkpoint or 'checkpoints/pretrained_gpt2.pt'
+        if not Path(checkpoint).exists():
+            print(f"Error: Checkpoint not found: {checkpoint}")
+            sys.exit(1)
+        
+        print(f"Loading model from {checkpoint}...")
+        generator = load_model_for_inference(checkpoint)
+        
+        print(f"\nGenerating text for: {args.prompt}")
+        print("-" * 80)
+        
+        outputs = generator.generate(
+            args.prompt,
+            max_length=args.max_length,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            num_return_sequences=1
+        )
+        
+        print(outputs[0])
+        print("-" * 80)
+    
+    elif args.command == 'train':
+        print("Training not yet implemented in CLI tool")
+        print("Please use: python main.py train [options]")
+    
+    elif args.command == 'export':
+        import torch
+        from export import export_to_onnx, export_to_torchscript, quantize_model
+        from utils import load_model
+        from model.gpt1 import GPT1Model
+        from config import GPT1Config
+        
+        checkpoint = args.checkpoint
+        if not Path(checkpoint).exists():
+            print(f"Error: Checkpoint not found: {checkpoint}")
+            sys.exit(1)
+        
+        print(f"Loading model from {checkpoint}...")
+        config = GPT1Config()
+        model = GPT1Model(config)
+        model, metadata = load_model(model, checkpoint)
+        
+        output = args.output or f"model.{args.format}"
+        
+        print(f"Exporting to {args.format}...")
+        
+        sample_input = torch.randint(0, config.vocab_size, (1, 10))
+        
+        if args.format == 'onnx':
+            export_to_onnx(model, output, sample_input)
+        elif args.format == 'torchscript':
+            export_to_torchscript(model, output, sample_input)
+        elif args.format == 'quantized':
+            quantized = quantize_model(model)
+            torch.save(quantized.state_dict(), output)
+        
+        print(f"Model exported to: {output}")
+    
+    elif args.command == 'info':
+        import torch
+        from export import get_model_info
+        from utils import load_model
+        from model.gpt1 import GPT1Model
+        from config import GPT1Config
+        from rich.console import Console
+        from rich.table import Table
+        
+        checkpoint = args.checkpoint
+        if not Path(checkpoint).exists():
+            print(f"Error: Checkpoint not found: {checkpoint}")
+            sys.exit(1)
+        
+        print(f"Loading model from {checkpoint}...")
+        config = GPT1Config()
+        model = GPT1Model(config)
+        model, metadata = load_model(model, checkpoint)
+        
+        info = get_model_info(model)
+        
+        console = Console()
+        table = Table(title="Model Information")
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+        
+        table.add_row("Total Parameters", f"{info['total_parameters']:,}")
+        table.add_row("Trainable Parameters", f"{info['trainable_parameters']:,}")
+        table.add_row("Model Size", f"{info['size_mb']:.2f} MB")
+        
+        if metadata:
+            table.add_row("", "")
+            for key, value in metadata.items():
+                table.add_row(key, str(value))
+        
+        console.print(table)
+    
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()
