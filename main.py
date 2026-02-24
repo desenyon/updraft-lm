@@ -1,18 +1,27 @@
 import argparse
+import os
 import torch
-from model.gpt1 import GPT1Model
-from config import GPT1Config
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress
+from rich.traceback import install
+
+install(show_locals=True)
+console = Console()
+
+from model.llama import LlamaModel
+from config import LlamaConfig
 from data.tokenizer import Tokenizer
 from data.dataset import get_dataloader
 from trainer import Trainer
 from generator import Generator, load_model_for_inference
 from utils import set_seed, get_device
-import os
 
 def train(args):
     set_seed(args.seed)
+    console.print(Panel(f"[bold blue]Updraft-LM Training | Version {LlamaConfig.version}[/]", expand=False))
     
-    config = GPT1Config()
+    config = LlamaConfig()
     config.batch_size = args.batch_size
     config.num_epochs = args.epochs
     config.learning_rate = args.learning_rate
@@ -20,10 +29,10 @@ def train(args):
     config.device = str(get_device())
     config.seed = args.seed
     
-    print("Initializing tokenizer...")
+    console.print("[green]Initializing tokenizer...[/]")
     tokenizer = Tokenizer()
     
-    print(f"Loading dataset: {args.dataset}")
+    console.print(f"[green]Loading dataset:[/] {args.dataset}")
     try:
         train_loader = get_dataloader(
             args.dataset,
@@ -45,38 +54,35 @@ def train(args):
                 num_workers=args.num_workers
             )
     except Exception as e:
-        print(f"Error loading dataset: {e}")
-        print("Please ensure the dataset is available or use a local text file.")
+        console.print(f"[red]Error loading dataset:[/] {e}")
+        console.print("Please ensure the dataset is available or use a local text file.")
         return
     
-    print("Initializing model...")
-    model = GPT1Model(config)
-    print(f"Model has {model.get_num_params():,} parameters")
+    console.print("[green]Initializing model...[/]")
+    model = LlamaModel(config)
+    console.print(f"[bold cyan]Model has {model.get_num_params():,} parameters[/]")
     
-    print("Initializing trainer...")
+    console.print("[green]Initializing trainer...[/]")
     trainer = Trainer(model, config, train_loader, val_loader)
     
     if args.resume:
         trainer.load_checkpoint(args.resume)
     
-    print("Starting training...")
+    console.print("[bold green]Starting training...[/]")
     trainer.train()
     
-    print(f"Training complete! Checkpoints saved to {config.checkpoint_dir}")
-
+    console.print(f"[bold green]Training complete! Checkpoints saved to {config.checkpoint_dir}[/]")
 
 def generate(args):
-    print(f"Loading model from {args.checkpoint}")
+    console.print(f"[green]Loading model from:[/] {args.checkpoint}")
     
     if not os.path.exists(args.checkpoint):
-        print(f"Error: Checkpoint not found at {args.checkpoint}")
+        console.print(f"[red]Error: Checkpoint not found at {args.checkpoint}[/]")
         return
     
     generator = load_model_for_inference(args.checkpoint)
     
-    print("\nGenerating text...")
-    print(f"Prompt: {args.prompt}")
-    print("-" * 80)
+    console.print(Panel(f"[bold blue]Generating text...[/]\n[cyan]Prompt:[/] {args.prompt}", expand=False))
     
     outputs = generator.generate(
         args.prompt,
@@ -88,25 +94,21 @@ def generate(args):
     )
     
     for i, output in enumerate(outputs):
-        print(f"\nGeneration {i+1}:")
-        print(output)
-        print("-" * 80)
-
+        console.print(Panel(output, title=f"Generation {i+1}", border_style="green"))
 
 def interactive(args):
-    print(f"Loading model from {args.checkpoint}")
+    console.print(f"[green]Loading model from:[/] {args.checkpoint}")
     
     if not os.path.exists(args.checkpoint):
-        print(f"Error: Checkpoint not found at {args.checkpoint}")
+        console.print(f"[red]Error: Checkpoint not found at {args.checkpoint}[/]")
         return
     
     generator = load_model_for_inference(args.checkpoint)
     
-    print("\nInteractive mode. Type 'quit' to exit.")
-    print("=" * 80)
+    console.print(Panel("[bold blue]Interactive mode[/]\nType 'quit' or 'exit' to stop.", expand=False))
     
     while True:
-        prompt = input("\nEnter prompt: ")
+        prompt = console.input("[bold cyan]Enter prompt:[/] ")
         
         if prompt.lower() in ['quit', 'exit', 'q']:
             break
@@ -114,7 +116,7 @@ def interactive(args):
         if not prompt.strip():
             continue
         
-        print("\nGenerating...")
+        console.print("[dim]Generating...[/]")
         outputs = generator.generate(
             prompt,
             max_length=args.max_length,
@@ -124,30 +126,27 @@ def interactive(args):
             num_return_sequences=1
         )
         
-        print("-" * 80)
-        print(outputs[0])
-        print("-" * 80)
-
+        console.print(Panel(outputs[0], border_style="green"))
 
 def demo():
-    print("Running Updraft-LM Demo")
-    print("=" * 80)
+    console.print(Panel(f"[bold blue]Running Updraft-LM Demo | Version {LlamaConfig.version}[/]", expand=False))
     
-    config = GPT1Config()
+    config = LlamaConfig()
     config.n_layers = 4
     config.n_heads = 8
+    config.n_kv_heads = 2
     config.d_model = 512
     config.d_ff = 2048
     config.max_seq_len = 256
     
-    print("Initializing small model for demo...")
-    model = GPT1Model(config)
-    print(f"Model has {model.get_num_params():,} parameters")
+    console.print("[green]Initializing small model for demo...[/]")
+    model = LlamaModel(config)
+    console.print(f"[bold cyan]Model has {model.get_num_params():,} parameters[/]")
     
     tokenizer = Tokenizer()
     
     device = get_device()
-    print(f"Using device: {device}")
+    console.print(f"[green]Using device:[/] {device}")
     
     generator = Generator(model, tokenizer, config, device)
     
@@ -157,12 +156,10 @@ def demo():
         "In a galaxy far, far away"
     ]
     
-    print("\nGenerating sample outputs (untrained model):")
-    print("=" * 80)
+    console.print("[bold green]\nGenerating sample outputs (untrained model):[/]")
     
     for prompt in prompts:
-        print(f"\nPrompt: {prompt}")
-        print("-" * 80)
+        console.print(f"\n[cyan]Prompt:[/] {prompt}")
         
         outputs = generator.generate(
             prompt,
@@ -172,14 +169,12 @@ def demo():
             num_return_sequences=1
         )
         
-        print(outputs[0][:200] + "...")
-        print("-" * 80)
+        console.print(Panel(outputs[0][:200] + "...", border_style="yellow"))
     
-    print("\nDemo complete!")
-
+    console.print("[bold green]\nDemo complete![/]")
 
 def main():
-    parser = argparse.ArgumentParser(description='Updraft-LM: GPT-1 Level Language Model')
+    parser = argparse.ArgumentParser(description='Updraft-LM: Advanced Language Model Framework')
     subparsers = parser.add_subparsers(dest='mode', help='Mode to run')
     
     train_parser = subparsers.add_parser('train', help='Train the model')
@@ -223,7 +218,6 @@ def main():
         demo()
     else:
         parser.print_help()
-
 
 if __name__ == '__main__':
     main()

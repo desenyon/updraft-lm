@@ -4,11 +4,14 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 import os
 import math
-from tqdm import tqdm
-from config import GPT1Config
+from rich.console import Console
+from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
+from config import LlamaConfig
+
+console = Console()
 
 class Trainer:
-    def __init__(self, model, config: GPT1Config, train_loader, val_loader=None):
+    def __init__(self, model, config: LlamaConfig, train_loader, val_loader=None):
         self.model = model
         self.config = config
         self.train_loader = train_loader
@@ -37,14 +40,14 @@ class Trainer:
                     no_decay.add(fpn)
                 elif pn.endswith('weight') and isinstance(m, (nn.Linear, nn.Embedding)):
                     decay.add(fpn)
-                elif pn.endswith('weight') and isinstance(m, nn.LayerNorm):
+                elif pn.endswith('weight') and 'norm' in mn.lower():
                     no_decay.add(fpn)
         
         param_dict = {pn: p for pn, p in self.model.named_parameters()}
         
         optim_groups = [
-            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": self.config.weight_decay},
-            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
+            {"params": [param_dict[pn] for pn in sorted(list(decay)) if pn in param_dict], "weight_decay": self.config.weight_decay},
+            {"params": [param_dict[pn] for pn in sorted(list(no_decay)) if pn in param_dict], "weight_decay": 0.0},
         ]
         
         optimizer = AdamW(optim_groups, lr=self.config.learning_rate, betas=(0.9, 0.999), eps=1e-8)
@@ -65,38 +68,49 @@ class Trainer:
         self.model.train()
         total_loss = 0
         
-        pbar = tqdm(self.train_loader, desc=f"Epoch {self.epoch+1}")
-        
-        for batch_idx, (input_ids, labels) in enumerate(pbar):
-            input_ids = input_ids.to(self.device)
-            labels = labels.to(self.device)
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            TextColumn("Loss: {task.fields[loss]:.4f}"),
+            TextColumn("LR: {task.fields[lr]:.6f}")
+        ) as progress:
+            task = progress.add_task(f"[cyan]Epoch {self.epoch+1}", total=len(self.train_loader), loss=0.0, lr=self.optimizer.param_groups[0]['lr'])
             
-            self.optimizer.zero_grad()
-            
-            logits, loss = self.model(input_ids, labels)
-            
-            loss.backward()
-            
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
-            
-            self.optimizer.step()
-            self.scheduler.step()
-            
-            total_loss += loss.item()
-            self.global_step += 1
-            
-            if self.global_step % self.config.log_interval == 0:
-                avg_loss = total_loss / (batch_idx + 1)
-                lr = self.optimizer.param_groups[0]['lr']
-                pbar.set_postfix({'loss': f'{avg_loss:.4f}', 'lr': f'{lr:.6f}'})
-            
-            if self.global_step % self.config.eval_interval == 0 and self.val_loader is not None:
-                val_loss = self.evaluate()
-                print(f"\nStep {self.global_step} - Val Loss: {val_loss:.4f}")
-                self.model.train()
-            
-            if self.global_step % self.config.save_interval == 0:
-                self.save_checkpoint()
+            for batch_idx, (input_ids, labels) in enumerate(self.train_loader):
+                input_ids = input_ids.to(self.device)
+                labels = labels.to(self.device)
+                
+                self.optimizer.zero_grad()
+                
+                logits, loss = self.model(input_ids, labels)
+                
+                loss.backward()
+                
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+                
+                self.optimizer.step()
+                self.scheduler.step()
+                
+                total_loss += loss.item()
+                self.global_step += 1
+                
+                if self.global_step % self.config.log_interval == 0:
+                    avg_loss = total_loss / (batch_idx + 1)
+                    lr = self.optimizer.param_groups[0]['lr']
+                    progress.update(task, advance=0, loss=avg_loss, lr=lr)
+                
+                progress.advance(task)
+                
+                if self.global_step % self.config.eval_interval == 0 and self.val_loader is not None:
+                    val_loss = self.evaluate()
+                    console.print(f"\n[cyan]Step {self.global_step}[/] - [yellow]Val Loss:[/] {val_loss:.4f}")
+                    self.model.train()
+                
+                if self.global_step % self.config.save_interval == 0:
+                    self.save_checkpoint()
         
         return total_loss / len(self.train_loader)
     
@@ -115,23 +129,23 @@ class Trainer:
         return total_loss / len(self.val_loader)
     
     def train(self):
-        print(f"Starting training for {self.config.num_epochs} epochs")
-        print(f"Model has {self.model.get_num_params():,} parameters")
-        print(f"Training on {self.device}")
+        console.print(f"[bold cyan]Starting training for {self.config.num_epochs} epochs[/]")
+        console.print(f"[cyan]Model has {self.model.get_num_params():,} parameters[/]")
+        console.print(f"[cyan]Training on {self.device}[/]")
         
         for epoch in range(self.config.num_epochs):
             self.epoch = epoch
             train_loss = self.train_epoch()
             
-            print(f"\nEpoch {epoch+1}/{self.config.num_epochs} - Train Loss: {train_loss:.4f}")
+            console.print(f"\n[bold green]Epoch {epoch+1}/{self.config.num_epochs}[/] - [yellow]Train Loss:[/] {train_loss:.4f}")
             
             if self.val_loader is not None:
                 val_loss = self.evaluate()
-                print(f"Epoch {epoch+1}/{self.config.num_epochs} - Val Loss: {val_loss:.4f}")
+                console.print(f"[bold green]Epoch {epoch+1}/{self.config.num_epochs}[/] - [yellow]Val Loss:[/] {val_loss:.4f}")
             
             self.save_checkpoint(f'epoch_{epoch+1}.pt')
         
-        print("Training complete!")
+        console.print("[bold green]Training complete![/]")
     
     def save_checkpoint(self, filename=None):
         if filename is None:
@@ -149,7 +163,7 @@ class Trainer:
         }
         
         torch.save(checkpoint, filepath)
-        print(f"Checkpoint saved: {filepath}")
+        console.print(f"[dim]Checkpoint saved: {filepath}[/]")
     
     def load_checkpoint(self, filepath):
         checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
@@ -160,5 +174,5 @@ class Trainer:
         self.global_step = checkpoint['global_step']
         self.epoch = checkpoint['epoch']
         
-        print(f"Checkpoint loaded: {filepath}")
-        print(f"Resumed from epoch {self.epoch}, step {self.global_step}")
+        console.print(f"[bold green]Checkpoint loaded:[/] {filepath}")
+        console.print(f"[green]Resumed from epoch {self.epoch}, step {self.global_step}[/]")
