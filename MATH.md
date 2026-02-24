@@ -1,250 +1,57 @@
-# Mathematical Foundations of Updraft-LM
+# Mathematics of the Updraft-LM Architecture
 
-## 1. Transformer Architecture
+Updraft-LM version 2.0.0 utilizes advanced architectural components introduced by LLaMA and other modern Transformer variants. This document provides formal derivations for these components.
 
-### 1.1 Multi-Head Self-Attention
+## 1. RMSNorm (Root Mean Square Normalization)
 
-The self-attention mechanism computes attention scores between all pairs of positions in a sequence.
+Unlike standard LayerNorm which computes both mean and variance, RMSNorm normalizes activations strictly by their root mean square, which reduces computational overhead without sacrificing performance.
 
-**Scaled Dot-Product Attention:**
+Given an input vector $x \in \mathbb{R}^d$, the output $y$ is computed as:
 
-Given input sequence $X \in \mathbb{R}^{n \times d_{model}}$, we compute:
+$$y = \frac{x}{\text{RMS}(x)} \odot \gamma$$
 
-$$Q = XW^Q, \quad K = XW^K, \quad V = XW^V$$
+Where the Root Mean Square is defined as:
 
-where $W^Q, W^K, W^V \in \mathbb{R}^{d_{model} \times d_k}$ are learnable weight matrices.
+$$\text{RMS}(x) = \sqrt{\frac{1}{d} \sum_{i=1}^d x_i^2 + \epsilon}$$
 
-The attention output is computed as:
+And $\gamma \in \mathbb{R}^d$ is a learnable scaling parameter. There is no bias term, nor is there a mean-subtraction step, differentiating it from traditional Layer Normalization.
 
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+## 2. SwiGLU Activation
 
-The scaling factor $\frac{1}{\sqrt{d_k}}$ prevents the dot products from growing too large.
+The traditional Feed-Forward Network (FFN) uses a sequence of two linear layers separated by a ReLU or GELU activation. Updraft-LM employs the SwiGLU formulation, an improvement introduced by the GLU Variants paper, which increases the expressive capacity of the model.
 
-**Multi-Head Attention:**
+For an input $x$, SwiGLU uses three learnable weight matrices $W_1, W_2, W_3$:
 
-Instead of computing a single attention function, multi-head attention computes $h$ attention functions in parallel:
+$$\text{FFN}_{SwiGLU}(x) = (\text{Swish}_{1}(x W_1) \odot (x W_3)) W_2$$
 
-$$\text{head}_i = \text{Attention}(QW^Q_i, KW^K_i, VW^V_i)$$
+The Swish function (specifically with parameter $\beta=1$, making it equivalent to SiLU) is defined as:
 
-$$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W^O$$
+$$\text{Swish}(z) = z \cdot \sigma(z) = \frac{z}{1 + e^{-z}}$$
 
-where $W^Q_i, W^K_i, W^V_i \in \mathbb{R}^{d_{model} \times d_k}$ and $W^O \in \mathbb{R}^{hd_k \times d_{model}}$.
+The intermediate hidden dimension is typically adjusted (e.g., to $\frac{8}{3}d$) to preserve parameter count equality with standard FFNs.
 
-In our implementation:
-- $d_{model} = 768$
-- $h = 12$ (number of heads)
-- $d_k = d_{model} / h = 64$
+## 3. Rotary Positional Embeddings (RoPE)
 
-### 1.2 Position-wise Feed-Forward Networks
+Instead of supplementing token embeddings with absolute positional vectors, RoPE encodes absolute positions with a rotation matrix and directly embeds relative positional information into the self-attention process.
 
-Each transformer block contains a fully connected feed-forward network applied independently to each position:
+Let $x_q$ and $x_k$ be the query and key vectors for an attention head, each of dimension $d$. We consider them as a set of $d/2$ pairs of complex numbers. The rotation for position $m$ is applied as follows:
 
-$$\text{FFN}(x) = \text{GELU}(xW_1 + b_1)W_2 + b_2$$
+$$f_q(x_m, m) = (x_{m,1} e^{im\theta_1}, x_{m,2} e^{im\theta_2}, ..., x_{m,d/2} e^{im\theta_{d/2}})$$
+$$f_k(x_n, n) = (x_{n,1} e^{in\theta_1}, x_{n,2} e^{in\theta_2}, ..., x_{n,d/2} e^{in\theta_{d/2}})$$
 
-where:
-- $W_1 \in \mathbb{R}^{d_{model} \times d_{ff}}$
-- $W_2 \in \mathbb{R}^{d_{ff} \times d_{model}}$
-- $d_{ff} = 3072$ (typically $4 \times d_{model}$)
+Where $\theta_i = \theta_{base}^{-2i/d}$, and typically $\theta_{base} = 10000$.
 
-**GELU Activation:**
+When the dot product corresponding to the attention score between query at position $m$ and key at position $n$ is computed, the relative distance $(m - n)$ naturally factors in:
 
-$$\text{GELU}(x) = x \cdot \Phi(x) = x \cdot \frac{1}{2}\left[1 + \text{erf}\left(\frac{x}{\sqrt{2}}\right)\right]$$
+$$\langle f_q(x_m, m), f_k(x_n, n) \rangle = \dots = \text{Re}\left( \sum_{j=1}^{d/2} (x_{m,j} e^{im\theta_j}) (x_{n,j} e^{-in\theta_j}) \right)$$
+$$= \text{Re}\left( \sum x_{m,j} x_{n,j} e^{i(m-n)\theta_j} \right)$$
 
-where $\Phi(x)$ is the cumulative distribution function of the standard normal distribution.
+This demonstrates that the attention score strictly depends on the relative positional offset.
 
-### 1.3 Layer Normalization
+## 4. Grouped-Query Attention (GQA)
 
-Layer normalization normalizes across the feature dimension:
+Updraft-LM uses Grouped-Query Attention to optimize the memory bandwidth bottleneck during autoregressive decoding.
 
-$$\text{LayerNorm}(x) = \gamma \odot \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta$$
+Instead of a single Key-Value (KV) head (Multi-Query Attention) or $N$ parallel KV heads (Multi-Head Attention), GQA allocates $G$ KV heads, where $1 < G < N$.
 
-where:
-- $\mu = \frac{1}{d_{model}}\sum_{i=1}^{d_{model}} x_i$ (mean)
-- $\sigma^2 = \frac{1}{d_{model}}\sum_{i=1}^{d_{model}} (x_i - \mu)^2$ (variance)
-- $\gamma, \beta$ are learnable parameters
-- $\epsilon = 10^{-5}$ for numerical stability
-
-### 1.4 Residual Connections
-
-Each sub-layer uses a residual connection followed by layer normalization:
-
-$$\text{Output} = x + \text{Sublayer}(\text{LayerNorm}(x))$$
-
-This formulation (pre-norm) has been shown to be more stable than the original post-norm variant.
-
-## 2. Positional Encoding
-
-Since self-attention has no notion of position, we add positional encodings to the input embeddings:
-
-$$PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d_{model}}}\right)$$
-
-$$PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d_{model}}}\right)$$
-
-where:
-- $pos$ is the position in the sequence
-- $i$ is the dimension index
-- $d_{model} = 768$
-
-## 3. Full Transformer Block
-
-A complete transformer block combines all components:
-
-$$\begin{align}
-z^{(\ell)} &= \text{LayerNorm}(x^{(\ell-1)}) \\
-x^{(\ell)} &= x^{(\ell-1)} + \text{MultiHead}(z^{(\ell)}) \\
-y^{(\ell)} &= \text{LayerNorm}(x^{(\ell)}) \\
-h^{(\ell)} &= x^{(\ell)} + \text{FFN}(y^{(\ell)})
-\end{align}$$
-
-## 4. GPT-1 Model Architecture
-
-### 4.1 Input Embedding
-
-The input tokens are embedded into continuous vectors:
-
-$$E = \text{Embedding}(X) + \text{PositionalEncoding}$$
-
-where $E \in \mathbb{R}^{n \times d_{model}}$ and $X \in \mathbb{Z}^n$ are the input token IDs.
-
-### 4.2 Causal Masking
-
-For autoregressive generation, we apply a causal mask to prevent attention to future positions:
-
-$$M_{ij} = \begin{cases} 
-0 & \text{if } i < j \\
-1 & \text{if } i \geq j
-\end{cases}$$
-
-The masked attention becomes:
-
-$$\text{Attention}_{\text{masked}} = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} + M\right)V$$
-
-where positions with $M_{ij} = 0$ are set to $-\infty$ before softmax.
-
-### 4.3 Output Layer
-
-After $L = 12$ transformer blocks, we apply final layer normalization and project to vocabulary:
-
-$$\text{logits} = \text{LayerNorm}(h^{(L)})W_{vocab}$$
-
-where $W_{vocab} \in \mathbb{R}^{d_{model} \times V}$ and $V = 50257$ is the vocabulary size.
-
-### 4.4 Loss Function
-
-The model is trained with cross-entropy loss:
-
-$$\mathcal{L} = -\frac{1}{N}\sum_{i=1}^{N}\log P(x_i | x_{<i})$$
-
-where $P(x_i | x_{<i})$ is computed by applying softmax to the logits:
-
-$$P(x_i | x_{<i}) = \frac{\exp(\text{logit}_i)}{\sum_{j=1}^{V}\exp(\text{logit}_j)}$$
-
-## 5. Training Procedure
-
-### 5.1 Optimizer: AdamW
-
-We use AdamW optimizer with the following update rules:
-
-$$m_t = \beta_1 m_{t-1} + (1 - \beta_1)g_t$$
-
-$$v_t = \beta_2 v_{t-1} + (1 - \beta_2)g_t^2$$
-
-$$\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1 - \beta_2^t}$$
-
-$$\theta_t = \theta_{t-1} - \alpha \left(\frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} + \lambda\theta_{t-1}\right)$$
-
-where:
-- $\beta_1 = 0.9, \beta_2 = 0.999$
-- $\alpha$ is the learning rate (with warmup and cosine decay)
-- $\lambda = 0.01$ is the weight decay coefficient
-- $\epsilon = 10^{-8}$
-
-### 5.2 Learning Rate Schedule
-
-We use a warmup followed by cosine annealing:
-
-$$\eta_t = \begin{cases}
-\frac{t}{T_{warmup}} \cdot \eta_{max} & \text{if } t < T_{warmup} \\
-0.1 \cdot \eta_{max} + 0.45 \cdot \eta_{max} \left(1 + \cos\left(\pi \frac{t - T_{warmup}}{T_{max} - T_{warmup}}\right)\right) & \text{otherwise}
-\end{cases}$$
-
-where:
-- $T_{warmup} = 2000$ steps
-- $\eta_{max} = 2.5 \times 10^{-4}$
-- Minimum learning rate is $0.1 \times \eta_{max}$
-
-### 5.3 Gradient Clipping
-
-To prevent gradient explosion, we clip gradients by global norm:
-
-$$\tilde{g} = \begin{cases}
-g & \text{if } \|g\| \leq \theta \\
-\theta \frac{g}{\|g\|} & \text{otherwise}
-\end{cases}$$
-
-where $\theta = 1.0$ is the clipping threshold.
-
-## 6. Sampling Strategies
-
-### 6.1 Temperature Sampling
-
-Temperature controls the randomness of predictions:
-
-$$P(x_i) = \frac{\exp(\text{logit}_i / T)}{\sum_j \exp(\text{logit}_j / T)}$$
-
-- $T < 1$: More deterministic (sharper distribution)
-- $T = 1$: Standard softmax
-- $T > 1$: More random (flatter distribution)
-
-### 6.2 Top-k Sampling
-
-Only sample from the top $k$ most likely tokens:
-
-$$P(x_i) = \begin{cases}
-\frac{\exp(\text{logit}_i)}{\sum_{j \in V_k} \exp(\text{logit}_j)} & \text{if } i \in V_k \\
-0 & \text{otherwise}
-\end{cases}$$
-
-where $V_k$ is the set of $k$ tokens with highest logits.
-
-### 6.3 Nucleus (Top-p) Sampling
-
-Sample from the smallest set of tokens whose cumulative probability exceeds $p$:
-
-$$V_p = \min\{V' : \sum_{i \in V'} P(x_i) \geq p\}$$
-
-where tokens are ordered by probability.
-
-## 7. Model Statistics
-
-**Total Parameters:** ~117M (comparable to GPT-1)
-
-**Architecture:**
-- Layers: 12
-- Attention heads: 12
-- Embedding dimension: 768
-- FFN dimension: 3072
-- Max sequence length: 512
-- Vocabulary size: 50,257
-
-**Memory Requirements:**
-- Model parameters: ~468 MB (FP32)
-- Training batch (64 × 512): ~96 MB
-- Optimizer states: ~936 MB
-- Total training memory: ~1.5 GB (excluding activations)
-
-## 8. Computational Complexity
-
-### Time Complexity per Layer:
-
-- **Self-Attention:** $O(n^2 \cdot d_{model})$
-- **Feed-Forward:** $O(n \cdot d_{model} \cdot d_{ff})$
-- **Total per layer:** $O(n^2 \cdot d_{model} + n \cdot d_{model} \cdot d_{ff})$
-
-For the full model with $L = 12$ layers:
-$$O(L \cdot (n^2 \cdot d_{model} + n \cdot d_{model} \cdot d_{ff}))$$
-
-With $n = 512, d_{model} = 768, d_{ff} = 3072, L = 12$:
-- Self-attention: ~2.4B operations
-- Feed-forward: ~9.5B operations
-- Total: ~143B FLOPs per forward pass
+Queries are divided into $G$ groups, where each group of $\frac{N}{G}$ query heads shares a single KV pair. This dramatically decreases the dimension of the Key-Value (KV) cache, yielding a generation speedup comparable to MQA, while maintaining linguistic capability comparable to full MHA.
