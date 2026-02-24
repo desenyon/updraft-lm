@@ -1,4 +1,3 @@
-from .transformer import TransformerBlock, MultiHeadAttention
-from .gpt1 import GPT1Model
+from .llama import LlamaModel, TransformerBlock
 
-__all__ = ['TransformerBlock', 'MultiHeadAttention', 'GPT1Model']
+__all__ = ['TransformerBlock', 'LlamaModel']
