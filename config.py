@@ -1,15 +1,19 @@
 from dataclasses import dataclass
 
 @dataclass
-class GPT1Config:
+class LlamaConfig:
+    version: str = "2.0.0"
     vocab_size: int = 50257
     max_seq_len: int = 512
     d_model: int = 768
     n_layers: int = 12
     n_heads: int = 12
+    n_kv_heads: int = 4  # Grouped Query Attention
     d_ff: int = 3072
     dropout: float = 0.1
-    activation: str = "gelu"
+    activation: str = "swiglu"
+    rms_norm_eps: float = 1e-5
+    rope_theta: float = 10000.0
     
     learning_rate: float = 2.5e-4
     batch_size: int = 64
